@@ -13,8 +13,9 @@
 //
 
 import * as path from 'path';
-import * as chain_reg from './chain_registry_local.mjs';
+import * as chain_reg from './chain_registry.mjs';
 
+const chainRegistryRoot = "../../..";
 
 const chainIdMap = new Map();
 let base_denoms = [];
@@ -33,6 +34,19 @@ function checkChainIdConflict(chain_name) {
     throw new Error(`Duplicate chain ID for ${chain_name} found! Chain ID ${chain_id} is also claimed by ${conflict_chain_name}.`);
   }
   chainIdMap.set(chain_id, chain_name);
+
+}
+
+function checkSlip44(chain_name) {
+
+  let chain_type = chain_reg.getFileProperty(chain_name, "chain", "chain_type");
+  if (!chain_type || chain_type !== "cosmos") { return; }
+  let chain_status = chain_reg.getFileProperty(chain_name, "chain", "status");
+  if (!chain_status || chain_status === "upcoming" || chain_status === "killed") { return; }
+  let slip44 = chain_reg.getFileProperty(chain_name, "chain", "slip44");
+  if (!slip44) {
+    throw new Error(`Chain ${chain_name} missing slip44!`);
+  }
 
 }
 
@@ -317,7 +331,7 @@ function checkTypeAsset(chain_name, asset) {
 
 }
 
-export function checkUniqueBaseDenom(chain_name, asset) {
+function checkUniqueBaseDenom(chain_name, asset) {
 
   if (base_denoms.includes(asset.base)) {
     throw new Error(`Base (denom) already registered: ${chain_name}, ${asset.base}, ${asset.symbol}.`);
@@ -325,6 +339,16 @@ export function checkUniqueBaseDenom(chain_name, asset) {
     base_denoms.push(asset.base);
   }
 
+}
+
+function checkChainNameMatchDirectory(chain_name) {
+  chain_reg.files.forEach((file) => {
+    const fileChainNameValue = chain_reg.getFileProperty(chain_name, file, "chain_name");
+    if (!fileChainNameValue) { return; }
+    if (fileChainNameValue !== chain_name) {
+      throw new Error(`Directory ${chain_name}'s ${file} file has chain_name: ${fileChainNameValue}, which is a mismatch!`);
+    }
+  });
 }
 
 
@@ -338,8 +362,14 @@ export function validate_chain_files() {
 
     //console.log(chain_name);
 
+    //check if chain_name matches directory name
+    checkChainNameMatchDirectory(chain_name);
+
     //check if chain_id is registered by another chain
     checkChainIdConflict(chain_name);
+
+    //check for slip44
+    checkSlip44(chain_name);
 
     //check if all fee tokens are registered
     checkFeeTokensAreRegistered(chain_name);
@@ -447,6 +477,9 @@ function checkDuplicateChannels(channel_id, chain, counterparty, chainNameToIbcC
 }
 
 function main() {
+
+  //setup chain registry
+  chain_reg.setup(chainRegistryRoot);
 
   //check all chains
   validate_chain_files();
